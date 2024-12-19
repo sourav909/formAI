@@ -1,5 +1,12 @@
-flask
+quart
 openai
+openai-async
 packaging
 python-dotenv
 python-docx
+asyncpg
+sqlalchemy
+jsonschema
+regex
+pypdf2
+pillow
