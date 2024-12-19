@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import re
 from quart_cors import cors
+import uuid
 
 load_dotenv()
 
@@ -42,13 +43,66 @@ async def generate_form():
             {"role": "user", "content": f"Create a form for the following request: {user_input}"}
         ]
 
-        # Get completion from OpenAI
+        json_schema = {
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "type": "object",
+            "properties": {
+                "form": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string"
+                        },
+                        "fields": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {
+                                        "type": "string"
+                                    },
+                                    "label": {
+                                        "type": "string"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["text", "email", "password", "checkbox", "radio", "select", "submit"]
+                                    },
+                                    "placeholder": {
+                                        "type": "string"
+                                    },
+                                    "required": {
+                                        "type": "boolean"
+                                    },
+                                    "choices": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "minItems": 1
+                                    }
+                                },
+                                "required": ["id", "label", "type", "required"],
+                                "additionalProperties": False
+                            }
+                        }
+                    },
+                    "required": ["fields", "title"]
+                }
+            },
+            "required": ["form"]
+        }
+
         response = await client.chat.completions.create(
             model=MODEL,
-            messages=messages
+            messages=messages,
+            response_format={
+                "type": "json_object"
+            }
         )
 
         # Correct way to access the response content
+        print (f"the uuid: {uuid.uuid1()}") 
         print(f"OpenAI Response content: {response.choices[0].message.content}")
         assistant_response = response.choices[0].message.content
 
@@ -66,7 +120,6 @@ def parse_form_json(response_text):
     Extract and return only the JSON structure from the response.
     """
     try:
-        # Clean the response to avoid any unnecessary whitespaces or empty characters
         response_text = response_text.strip()
 
         if not response_text:
@@ -75,18 +128,10 @@ def parse_form_json(response_text):
         # Debug: Log the response content to check if it's properly formatted
         print(f"Raw OpenAI Response: {response_text}")
 
-        # Extract the JSON part from the response text using regex
-        json_part_match = re.search(r'```json\s*\n(.*?)\n\s*```', response_text, re.DOTALL)
+        # Since the response is already in JSON format, parse it directly
+        form_data = json.loads(response_text)
 
-        if not json_part_match:
-            raise ValueError("No valid JSON part found in response")
-
-        # Extract the JSON content inside the code block
-        json_part = json_part_match.group(1).strip()
-
-        # Parse the extracted JSON part
-        form_data = json.loads(json_part)
-
+        add_uuid_to_form_fields(form_data)
         add_events_to_form_fields(form_data)
 
         return form_data
@@ -100,6 +145,39 @@ def parse_form_json(response_text):
     except Exception as e:
         print(f"Unexpected error: {e}")
         return {"error": "An unexpected error occurred"}
+
+def add_uuid_to_form_fields(form_data):
+    print("form_data.get('fields', [])", form_data["form"].get('fields', []))
+    print("form_data",form_data["form"]["fields"])
+    for field in form_data["form"].get('fields', []):
+        field['_id'] = str(uuid.uuid4())
+    
+    # If submit button exists, also generate a UUID for it
+    # if "submitButton" in form_data:
+    #     form_data["submitButton"]["_id"] = str(uuid.uuid4())
+
+    # Debugging: Log the form data after UUIDs have been added
+    print(f"Form data after adding UUIDs: {json.dumps(form_data, indent=2)}")
+
+# def add_uuid_to_form_fields(form_data):
+#     print(f"Adding UUIDs to form fields...{form_data}")
+
+#     # Loop through each field and add a UUID
+#     for field in form_data.get('fields', []):
+#         print(f"Processing field: {field}")  # Debug log
+#         if isinstance(field, dict) and 'name' in field:
+#             field['_id'] = str(uuid.uuid4())  # Convert UUID to string
+#             print(f"Added _id to field: {field['name']} -> {field['_id']}")  # Debug log
+#         else:
+#             print(f"Skipping invalid field: {field}")  # Debug log
+
+#     # If submit button exists, also generate a UUID for it
+#     if "submitButton" in form_data:
+#         form_data["submitButton"]["_id"] = str(uuid.uuid4())
+#         print(f"Added _id to submitButton -> {form_data['submitButton']['_id']}")  # Debug log
+
+#     # Debugging: Log the form data after UUIDs have been added
+#     print(f"Form data after adding UUIDs: {json.dumps(form_data, indent=2)}")
 
 
 def add_events_to_form_fields(form_data):
