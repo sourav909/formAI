@@ -61,31 +61,6 @@ async def generate_form():
         print(f"Error generating form: {e}")  # Debugging line
         return jsonify({"error": "Failed to generate form"}), 500
 
-# def parse_form_json(response_text):
-#     """
-#     Extract and return only the JSON structure from the response.
-#     """
-#     try:
-#         # Extract the JSON part from the response text using regex
-#         json_part_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
-#         if not json_part_match:
-#             raise ValueError("No valid JSON part found in response")
-
-#         json_part = json_part_match.group(1).strip()
-
-#         form_data = json.loads(json_part)
-
-#         add_events_to_form_fields(form_data)
-
-#         return form_data
-
-#     except json.JSONDecodeError as e:
-#         print(f"Error parsing response as JSON: {e}")
-#         return {"error": "Failed to parse the form response"}
-#     except ValueError as e:
-#         print(f"Error extracting JSON: {e}")
-#         return {"error": str(e)}
-
 def parse_form_json(response_text):
     """
     Extract and return only the JSON structure from the response.
