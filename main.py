@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import re
 
-# Load environment variables from .env file
 load_dotenv()
 
 # Initialize OpenAI API key
@@ -15,7 +14,6 @@ if not OPENAI_API_KEY:
     raise ValueError("Error: OPENAI_API_KEY not found in environment variables.")
 print(f"API Key Loaded: {OPENAI_API_KEY}")  # Debugging line
 
-# Initialize the AsyncOpenAI client
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # Quart app initialization
@@ -71,11 +69,11 @@ def parse_form_json(response_text):
         if not json_part_match:
             raise ValueError("No valid JSON part found in response")
 
-        # Extract the JSON content inside the code block
         json_part = json_part_match.group(1).strip()
 
-        # Parse the extracted JSON part
         form_data = json.loads(json_part)
+
+        add_events_to_form_fields(form_data)
 
         return form_data
 
@@ -86,6 +84,33 @@ def parse_form_json(response_text):
         print(f"Error extracting JSON: {e}")
         return {"error": str(e)}
 
+def add_events_to_form_fields(form_data):
+    """
+    Adds events like onFocus, onChange, onSubmit to form fields.
+    Modifies the event handlers based on the type of field.
+    """
+    # Loop through each field and add events
+    for field in form_data.get('fields', []):
+        events = {}
+
+        if field.get("type") == "text" or field.get("type") == "email" or field.get("type") == "password":
+            # For text fields, we can add onFocus and onChange
+            events["onFocus"] = "console.log('Field focused')"
+            events["onChange"] = "console.log('Field value changed')"
+        elif field.get("type") == "checkbox":
+            # For checkboxes, we can add onChange
+            events["onChange"] = "console.log('Checkbox value changed')"
+        elif field.get("type") == "submit":
+            # For the submit button, we add onClick
+            events["onClick"] = "console.log('Form submitted')"
+        
+        field['events'] = events
+
+    # Adding event to the submit button (if any)
+    if "submitButton" in form_data:
+        form_data["submitButton"]["events"] = {
+            "onClick": "console.log('Submit button clicked')"
+        }
 
 # Run Quart app
 if __name__ == '__main__':
