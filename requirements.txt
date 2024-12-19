@@ -2,3 +2,4 @@ flask
 openai
 packaging
 python-dotenv
+python-docx

@@ -1,83 +1,92 @@
 import os
-from time import sleep
-from packaging import version
-from flask import Flask, request, jsonify
+import json
+from quart import Quart, request, jsonify
 import openai
-import functions
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
+import re
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Check OpenAI version is correct
-required_version = version.parse("1.1.1")
-current_version = version.parse(openai.__version__)
+# Initialize OpenAI API key
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 if not OPENAI_API_KEY:
     raise ValueError("Error: OPENAI_API_KEY not found in environment variables.")
+print(f"API Key Loaded: {OPENAI_API_KEY}")  # Debugging line
 
-if current_version < required_version:
-    raise ValueError(f"Error: OpenAI version {openai.__version__}"
-                       " is less than the required version 1.1.1")
-else:
-    print("OpenAI version is compatible.")
+# Initialize the AsyncOpenAI client
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-# Start Flask app
-app = Flask(__name__)
+# Quart app initialization
+app = Quart(__name__)
 
-# Init OpenAI client
-client = openai  # You can just use `openai` directly instead of importing `OpenAI`
+# Model to use for form generation
+MODEL = 'gpt-4'
 
-# Create new assistant or load existing
-assistant_id = functions.create_assistant(client)
+@app.route('/generate-form', methods=['POST'])
+async def generate_form():
+    try:
+        # Get user input from JSON body
+        data = await request.json
+        user_input = data.get('message', '')
 
-# Start conversation thread
-@app.route('/start', methods=['GET'])
-def start_conversation():
-    print("Starting a new conversation...")  # Debugging line
-    thread = client.beta.threads.create()
-    print(f"New thread created with ID: {thread.id}")  # Debugging line
-    return jsonify({"thread_id": thread.id})
+        if not user_input:
+            return jsonify({"error": "No message provided"}), 400
 
-# Generate response
-@app.route('/chat', methods=['POST'])
-def chat():
-    data = request.json
-    thread_id = data.get('thread_id')
-    user_input = data.get('message', '')
+        print(f"User Input: {user_input}")  # Debugging line
 
-    if not thread_id:
-        print("Error: Missing thread_id")  # Debugging line
-        return jsonify({"error": "Missing thread_id"}), 400
+        # Define OpenAI messages
+        messages = [
+            {"role": "system", "content": "You are an AI assistant that generates form JSON structures based on user requests."},
+            {"role": "user", "content": f"Create a form for the following request: {user_input}"}
+        ]
 
-    print(f"Received message: {user_input} for thread ID: {thread_id}"
-          )  # Debugging line
+        # Get completion from OpenAI
+        response = await client.chat.completions.create(
+            model=MODEL,
+            messages=messages
+        )
 
-    # Add the user's message to the thread
-    client.beta.threads.messages.create(thread_id=thread_id,
-                                        role="user",
-                                        content=user_input)
+        # Correct way to access the response content
+        print(f"OpenAI Response content: {response.choices[0].message.content}")
+        assistant_response = response.choices[0].message.content
 
-    # Run the Assistant
-    run = client.beta.threads.runs.create(thread_id=thread_id,
-                                          assistant_id=assistant_id)
+        # Try to parse the OpenAI response into JSON
+        form_json = parse_form_json(assistant_response)
 
-    # Check if the Run requires action (function call)
-    while True:
-        run_status = client.beta.threads.runs.retrieve(thread_id=thread_id,
-                                                       run_id=run.id)
-        print(f"Run status: {run_status.status}")
-        if run_status.status == 'completed':
-            break
-        sleep(1)  # Wait for a second before checking again
+        return jsonify({"form": form_json})
 
-    # Retrieve and return the latest message from the assistant
-    messages = client.beta.threads.messages.list(thread_id=thread_id)
-    response = messages.data[0].content[0].text.value
+    except Exception as e:
+        print(f"Error generating form: {e}")  # Debugging line
+        return jsonify({"error": "Failed to generate form"}), 500
 
-    print(f"Assistant response: {response}")  # Debugging line
-    return jsonify({"response": response})
+def parse_form_json(response_text):
+    """
+    Extract and return only the JSON structure from the response.
+    """
+    try:
+        # Extract the JSON part from the response text using regex
+        json_part_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
+        if not json_part_match:
+            raise ValueError("No valid JSON part found in response")
 
-# Run server
+        # Extract the JSON content inside the code block
+        json_part = json_part_match.group(1).strip()
+
+        # Parse the extracted JSON part
+        form_data = json.loads(json_part)
+
+        return form_data
+
+    except json.JSONDecodeError as e:
+        print(f"Error parsing response as JSON: {e}")
+        return {"error": "Failed to parse the form response"}
+    except ValueError as e:
+        print(f"Error extracting JSON: {e}")
+        return {"error": str(e)}
+
+
+# Run Quart app
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
