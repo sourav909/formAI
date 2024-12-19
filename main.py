@@ -5,6 +5,7 @@ import openai
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 import re
+from quart_cors import cors
 
 load_dotenv()
 
@@ -20,7 +21,8 @@ client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 app = Quart(__name__)
 
 # Model to use for form generation
-MODEL = 'gpt-4'
+app = cors(app, allow_origin="*")
+MODEL = 'gpt-4o-mini'
 
 @app.route('/generate-form', methods=['POST'])
 async def generate_form():
@@ -59,18 +61,55 @@ async def generate_form():
         print(f"Error generating form: {e}")  # Debugging line
         return jsonify({"error": "Failed to generate form"}), 500
 
+# def parse_form_json(response_text):
+#     """
+#     Extract and return only the JSON structure from the response.
+#     """
+#     try:
+#         # Extract the JSON part from the response text using regex
+#         json_part_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
+#         if not json_part_match:
+#             raise ValueError("No valid JSON part found in response")
+
+#         json_part = json_part_match.group(1).strip()
+
+#         form_data = json.loads(json_part)
+
+#         add_events_to_form_fields(form_data)
+
+#         return form_data
+
+#     except json.JSONDecodeError as e:
+#         print(f"Error parsing response as JSON: {e}")
+#         return {"error": "Failed to parse the form response"}
+#     except ValueError as e:
+#         print(f"Error extracting JSON: {e}")
+#         return {"error": str(e)}
+
 def parse_form_json(response_text):
     """
     Extract and return only the JSON structure from the response.
     """
     try:
+        # Clean the response to avoid any unnecessary whitespaces or empty characters
+        response_text = response_text.strip()
+
+        if not response_text:
+            raise ValueError("Received an empty response")
+
+        # Debug: Log the response content to check if it's properly formatted
+        print(f"Raw OpenAI Response: {response_text}")
+
         # Extract the JSON part from the response text using regex
-        json_part_match = re.search(r'```json\n(.*?)\n```', response_text, re.DOTALL)
+        json_part_match = re.search(r'```json\s*\n(.*?)\n\s*```', response_text, re.DOTALL)
+
         if not json_part_match:
             raise ValueError("No valid JSON part found in response")
 
+        # Extract the JSON content inside the code block
         json_part = json_part_match.group(1).strip()
 
+        # Parse the extracted JSON part
         form_data = json.loads(json_part)
 
         add_events_to_form_fields(form_data)
@@ -83,6 +122,10 @@ def parse_form_json(response_text):
     except ValueError as e:
         print(f"Error extracting JSON: {e}")
         return {"error": str(e)}
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        return {"error": "An unexpected error occurred"}
+
 
 def add_events_to_form_fields(form_data):
     """
